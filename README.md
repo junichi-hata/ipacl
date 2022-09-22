@@ -1,23 +1,22 @@
-# Default Starter Kit for Rust
+# IP ACL at Compute@Edge Fastly
 
-[![Deploy to Fastly](https://deploy.edgecompute.app/button)](https://deploy.edgecompute.app/deploy)
+## Upload ACL list
+/acl_upload is the endpoint. To update the IP ACL list, you need to upload the array format file to the endpoint. The IP should comply with Ipv4Net format. https://docs.rs/ipnet/2.5.0/ipnet/struct.Ipv4Net.html Sample file is `src/ip_list.json`
 
-Get to know the Fastly Compute@Edge environment with a basic starter that demonstrates routing, simple synthetic responses and code comments that cover common patterns.
+e.g.
 
-**For more details about this and other starter kits for Compute@Edge, see the [Fastly Developer Hub](https://developer.fastly.com/solutions/starters/)**.
+```
+curl -sv -X PUT https://partly-clear-bluebird.edgecompute.app/acl_upload -T src/ip_list.json
+```
 
-## Features
+## IP ACL endpoint
+/acl_check is the endpoint to check your client IP is in the ACL list.
 
-- Allow only requests with particular HTTP methods
-- Match request URL path and methods for routing
-- Build synthetic responses at the edge
+e.g.
 
-## Understanding the code
+```
+curl -sv -X GET https://partly-clear-bluebird.edgecompute.app/acl_check -4
+```
 
-This starter is intentionally lightweight, and requires no dependencies aside from the [`fastly`](https://docs.rs/fastly) crate. It will help you understand the basics of processing requests at the edge using Fastly. This starter includes implementations of common patterns explained in our [using Compute@Edge](https://developer.fastly.com/learning/compute/rust/) and [VCL migration](https://developer.fastly.com/learning/compute/migrate/) guides.
-
-The starter doesn't require the use of any backends. Once deployed, you will have a Fastly service running on Compute@Edge that can generate synthetic responses at the edge.
-
-## Security issues
-
-Please see [SECURITY.md](SECURITY.md) for guidance on reporting security-related issues.
+### Caveats
+Only IPv4 is supported now.
