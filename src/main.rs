@@ -27,8 +27,8 @@ fn main(mut req: Request) -> Result<Response, Error> {
             let body = req.take_body_str();
             let (upload_count, ip_list) = check_body(&body)?;
             let ip_list_str: Vec<String> = ip_list.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+            let ip_list_count = ip_list_str.len();
             let ip_str = format!("{:?}", ip_list_str);
-            println!("{}", ip_str);
             let mut object_store = ObjectStore::open("ip-acl")
                 .unwrap_or_else(|_| {
                     panic_with_status!(501, "objectstore API not available on this host");
@@ -38,7 +38,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 });
             object_store.insert("ipacl", ip_str)?;
             Ok(Response::from_status(StatusCode::OK)
-               .with_body_text_plain(&format!("The number of IPNet is {} updated", upload_count)))
+               .with_body_text_plain(&format!("The number of IPNet is {} updated. Aggergated to {}", upload_count, ip_list_count)))
         }
         (&Method::GET, "/acl_check") => {
             //TODO: Authentication is required
