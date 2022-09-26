@@ -1,6 +1,6 @@
 use fastly::error::anyhow;
 use fastly::http::{header, Method, StatusCode};
-use fastly::{object_store::ObjectStore, panic_with_status, Body, Error, Request, Response};
+use fastly::{object_store::ObjectStore, panic_with_status, Error, Request, Response};
 use ipnet::Ipv4Net;
 use serde_json::Value;
 use std::net::{IpAddr, Ipv4Addr};
@@ -91,7 +91,11 @@ fn get_ip_list() -> Result<Vec<Value>, Error> {
 }
 
 fn check_body(body: &str) -> Result<(i64, Vec<Ipv4Net>), Error> {
-    let body_value: Value = serde_json::from_str(body)?;
+    let body_result = serde_json::from_str(body);
+    if body_result.is_err() {
+        return Err(anyhow!("Upload format should be JSON format."));
+    }
+    let body_value: Value = body_result?;
     let ip_list = body_value.as_array().ok_or_else(|| anyhow!("Upload format is incorrect. It should be Array."))?;
     let mut i: i64 = 0;
     let mut ip_aggregated_list: Vec<Ipv4Net> = Vec::new();
