@@ -112,6 +112,9 @@ fn check_body(body: &str) -> Result<(i64, Vec<Ipv4Net>), Error> {
 
 fn block_client_ip(client_ip: Ipv4Addr, ip_list: Vec<Ipv4Net>) -> bool {
     let len = ip_list.len();
+    if len == 0 {
+        return false;
+    }
     let mut low = 0;
     let mut high = len - 1;
 
