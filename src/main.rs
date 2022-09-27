@@ -26,9 +26,8 @@ fn main(mut req: Request) -> Result<Response, Error> {
             //TODO: Authentication is required
             let body = req.take_body_str();
             let (upload_count, ip_list) = check_body(&body)?;
-            let ip_list_str: Vec<String> = ip_list.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-            let ip_list_count = ip_list_str.len();
-            let ip_str = format!("{:?}", ip_list_str);
+            let ip_list_count = ip_list.len();
+            let binary_ipnet_vec: Vec<u8> = bincode::serialize(&ip_list)?;
             let mut object_store = ObjectStore::open("ip-acl")
                 .unwrap_or_else(|_| {
                     panic_with_status!(501, "objectstore API not available on this host");
@@ -36,7 +35,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 .unwrap_or_else(|| {
                     panic_with_status!(501, "Object Store: ip-acl is not available");
                 });
-            object_store.insert("ipacl", ip_str)?;
+            object_store.insert("ipacl", binary_ipnet_vec)?;
             Ok(Response::from_status(StatusCode::OK)
                .with_body_text_plain(&format!("The number of IPNet is {} updated. Aggergated to {}", upload_count, ip_list_count)))
         }
@@ -47,7 +46,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 .ok_or_else(|| anyhow!("could not get client ip"))?;
             let client_ip_v4 = match client_ip {
                 IpAddr::V4(ip4) => ip4,
-                IpAddr::V6(ip6) => {
+                IpAddr::V6(_ip6) => {
                     return Ok(Response::from_status(StatusCode::OK)
                         .with_body_text_plain(&client_ip.to_string()))
                 }
@@ -75,17 +74,16 @@ fn main(mut req: Request) -> Result<Response, Error> {
     }
 }
 
-fn get_ip_list() -> Result<Vec<Value>, Error> {
-   let mut object_store = ObjectStore::open("ip-acl")
+fn get_ip_list() -> Result<Vec<Ipv4Net>, Error> {
+   let object_store = ObjectStore::open("ip-acl")
       .unwrap_or_else(|_| {
           panic_with_status!(501, "objectstore API not available on this host");
       })
       .unwrap_or_else(|| {
           panic_with_status!(501, "Object Store: chat is not available");
       });
-    let ip_list = object_store.lookup_str("ipacl")?;
-    let block_list_value: Value = serde_json::from_str(&ip_list.unwrap())?;
-    let block_list: Vec<Value> = block_list_value.as_array().unwrap().to_vec();
+    let ip_list = object_store.lookup_bytes("ipacl")?;
+    let block_list: Vec<Ipv4Net> = bincode::deserialize(&ip_list.unwrap()).unwrap();
 
     Ok(block_list)
 }
@@ -112,7 +110,7 @@ fn check_body(body: &str) -> Result<(i64, Vec<Ipv4Net>), Error> {
     Ok((i, ip_aggregated_list))
 }
 
-fn block_client_ip(client_ip: Ipv4Addr, ip_list: Vec<Value>) -> bool {
+fn block_client_ip(client_ip: Ipv4Addr, ip_list: Vec<Ipv4Net>) -> bool {
     let len = ip_list.len();
     let mut low = 0;
     let mut high = len - 1;
@@ -120,9 +118,9 @@ fn block_client_ip(client_ip: Ipv4Addr, ip_list: Vec<Value>) -> bool {
     while low <= high {
         let mid = (low + high) / 2;
         match &ip_list[mid] {
-            x if ip_list[mid].as_str().unwrap().parse::<Ipv4Net>().unwrap().contains(&client_ip) => return true,
+            _x if ip_list[mid].contains(&client_ip) => return true,
             _ => {
-                    let mid_network: u32 = ip_list[mid].as_str().unwrap().parse::<Ipv4Net>().unwrap().network().into();
+                    let mid_network: u32 = ip_list[mid].network().into();
                     let client_ip_u32: u32 = client_ip.into();
                     if mid_network < client_ip_u32 {
                         low = mid + 1;
