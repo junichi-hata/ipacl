@@ -25,9 +25,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
         (&Method::PUT, "/acl_upload") => {
             //TODO: Authentication is required
             let body = req.take_body_str();
-            let (upload_count, ip_list) = check_body(&body)?;
-            let ip_list_count = ip_list.len();
-            let binary_ipnet_vec: Vec<u8> = bincode::serialize(&ip_list)?;
+            let (upload_count, ip_lists) = check_body(&body)?;
             let mut object_store = ObjectStore::open("ip-acl")
                 .unwrap_or_else(|_| {
                     panic_with_status!(501, "objectstore API not available on this host");
@@ -35,7 +33,12 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 .unwrap_or_else(|| {
                     panic_with_status!(501, "Object Store: ip-acl is not available");
                 });
-            object_store.insert("ipacl", binary_ipnet_vec)?;
+            let mut ip_list_count = 0;
+            for ip_list_num in 0..ip_lists.len() {
+                ip_list_count += ip_lists[ip_list_num].len();
+                let binary_ipnet_vec: Vec<u8> = bincode::serialize(&ip_lists[ip_list_num])?;
+                object_store.insert(&ip_list_num.to_string(), binary_ipnet_vec)?;
+            }
             Ok(Response::from_status(StatusCode::OK)
                .with_body_text_plain(&format!("The number of IPNet is {} updated. Aggergated to {}", upload_count, ip_list_count)))
         }
@@ -51,8 +54,11 @@ fn main(mut req: Request) -> Result<Response, Error> {
                         .with_body_text_plain(&client_ip.to_string()))
                 }
             };
-            let ip_list = get_ip_list()?;
-            if block_client_ip(client_ip_v4, ip_list) {
+            let ip_list = get_ip_list(&client_ip_v4);
+            if ip_list.is_err() {
+                return Ok(Response::from_status(StatusCode::OK).with_body_text_plain(&client_ip.to_string()));
+            }
+            if block_client_ip(client_ip_v4, ip_list.unwrap()) {
                 return Ok(Response::from_status(StatusCode::FORBIDDEN)
                        .with_body_text_plain(&client_ip.to_string()));
             }
@@ -74,7 +80,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
     }
 }
 
-fn get_ip_list() -> Result<Vec<Ipv4Net>, Error> {
+fn get_ip_list(client_ip: &Ipv4Addr) -> Result<Vec<Ipv4Net>, Error> {
    let object_store = ObjectStore::open("ip-acl")
       .unwrap_or_else(|_| {
           panic_with_status!(501, "objectstore API not available on this host");
@@ -82,32 +88,51 @@ fn get_ip_list() -> Result<Vec<Ipv4Net>, Error> {
       .unwrap_or_else(|| {
           panic_with_status!(501, "Object Store: chat is not available");
       });
-    let ip_list = object_store.lookup_bytes("ipacl")?;
-    let block_list: Vec<Ipv4Net> = bincode::deserialize(&ip_list.unwrap()).unwrap();
+    let first_octet = client_ip.octets()[0];
+    let object = object_store.lookup_bytes(&first_octet.to_string());
+    if object.is_err() {
+        return Err(anyhow!("No ACL objects"));
+    }
+    let ip_list = object.unwrap();
+    let block_list: Vec<Ipv4Net> = if ip_list.is_some() {
+        bincode::deserialize(&ip_list.unwrap()).unwrap()
+    } else {
+        return Err(anyhow!("No ACL objects"));
+    };
 
     Ok(block_list)
 }
 
-fn check_body(body: &str) -> Result<(i64, Vec<Ipv4Net>), Error> {
+fn check_body(body: &str) -> Result<(i64, Vec<Vec<Ipv4Net>>), Error> {
     let body_result = serde_json::from_str(body);
     if body_result.is_err() {
         return Err(anyhow!("Upload format should be JSON format."));
     }
     let body_value: Value = body_result?;
-    let ip_list = body_value.as_array().ok_or_else(|| anyhow!("Upload format is incorrect. It should be Array."))?;
+    let ip_list_array = body_value.as_array().ok_or_else(|| anyhow!("Upload format is incorrect. It should be Array."))?;
     let mut i: i64 = 0;
-    let mut ip_aggregated_list: Vec<Ipv4Net> = Vec::new();
-    for ipnet in ip_list {
+    let mut ip_lists: Vec<Vec<Ipv4Net>> = Vec::new();
+    unsafe {
+        ip_lists.set_len(255);
+    }
+    for ipnet in ip_list_array {
         let net = ipnet.as_str().unwrap().parse::<Ipv4Net>();
         if net.is_err() {
             return Err(anyhow!("{:?} doesn't match Ipv4Net format.", ipnet));
         }
-        ip_aggregated_list.push(net.unwrap());
+        let ipv4net = net.unwrap();
+        let first_octet: usize = ipv4net.addr().octets()[0].into();
+        ip_lists[first_octet].push(ipv4net);
         i+=1;
     }
-    ip_aggregated_list = Ipv4Net::aggregate(&ip_aggregated_list);
-    ip_aggregated_list.sort_by(|x, y| x.cmp(&y));
-    Ok((i, ip_aggregated_list))
+    for ip_list_num in 0..ip_lists.len() {
+        if ip_lists[ip_list_num].len() != 0 {
+            let mut ip_aggregated_list = Ipv4Net::aggregate(&ip_lists[ip_list_num]);
+            ip_aggregated_list.sort_by(|x, y| x.cmp(&y));
+            ip_lists[ip_list_num] = ip_aggregated_list;
+        }
+    }
+    Ok((i, ip_lists))
 }
 
 fn block_client_ip(client_ip: Ipv4Addr, ip_list: Vec<Ipv4Net>) -> bool {
