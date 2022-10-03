@@ -37,10 +37,27 @@ fn main(mut req: Request) -> Result<Response, Error> {
             for ip_list_num in 0..ip_lists.len() {
                 ip_list_count += ip_lists[ip_list_num].len();
                 let binary_ipnet_vec: Vec<u8> = bincode::serialize(&ip_lists[ip_list_num])?;
-                object_store.insert(&ip_list_num.to_string(), binary_ipnet_vec)?;
+                let object = object_store.lookup_bytes(&ip_list_num.to_string());
+                if object.is_err() {
+                    return Err(anyhow!("Failed to read object store: {}", ip_list_num));
+                }
+                let binary_ipnet_pre = object.unwrap();
+                if binary_ipnet_pre.is_some() {
+                    if binary_ipnet_vec == binary_ipnet_pre.unwrap() {
+                        continue;
+                    }
+                }
+                let obs_insert = object_store.insert(&ip_list_num.to_string(), binary_ipnet_vec);
+                if obs_insert.is_err() {
+                    return Err(anyhow!("Failed to upload: {}", ip_list_num));
+                }
             }
-            Ok(Response::from_status(StatusCode::OK)
-               .with_body_text_plain(&format!("The number of IPNet is {} updated. Aggergated to {}", upload_count, ip_list_count)))
+            Ok(
+                Response::from_status(StatusCode::OK).with_body_text_plain(&format!(
+                    "The number of IPNet is {} updated. Aggergated to {}",
+                    upload_count, ip_list_count
+                )),
+            )
         }
         (&Method::GET, "/acl_check") => {
             //TODO: Authentication is required
@@ -56,11 +73,12 @@ fn main(mut req: Request) -> Result<Response, Error> {
             };
             let ip_list = get_ip_list(&client_ip_v4);
             if ip_list.is_err() {
-                return Ok(Response::from_status(StatusCode::OK).with_body_text_plain(&client_ip.to_string()));
+                return Ok(Response::from_status(StatusCode::OK)
+                    .with_body_text_plain(&client_ip.to_string()));
             }
             if block_client_ip(client_ip_v4, ip_list.unwrap()) {
                 return Ok(Response::from_status(StatusCode::FORBIDDEN)
-                       .with_body_text_plain(&client_ip.to_string()));
+                    .with_body_text_plain(&client_ip.to_string()));
             }
             /*
             for block_ip_value in &ip_list {
@@ -81,13 +99,13 @@ fn main(mut req: Request) -> Result<Response, Error> {
 }
 
 fn get_ip_list(client_ip: &Ipv4Addr) -> Result<Vec<Ipv4Net>, Error> {
-   let object_store = ObjectStore::open("ip-acl")
-      .unwrap_or_else(|_| {
-          panic_with_status!(501, "objectstore API not available on this host");
-      })
-      .unwrap_or_else(|| {
-          panic_with_status!(501, "Object Store: chat is not available");
-      });
+    let object_store = ObjectStore::open("ip-acl")
+        .unwrap_or_else(|_| {
+            panic_with_status!(501, "objectstore API not available on this host");
+        })
+        .unwrap_or_else(|| {
+            panic_with_status!(501, "Object Store: chat is not available");
+        });
     let first_octet = client_ip.octets()[0];
     let object = object_store.lookup_bytes(&first_octet.to_string());
     if object.is_err() {
@@ -109,7 +127,9 @@ fn check_body(body: &str) -> Result<(i64, Vec<Vec<Ipv4Net>>), Error> {
         return Err(anyhow!("Upload format should be JSON format."));
     }
     let body_value: Value = body_result?;
-    let ip_list_array = body_value.as_array().ok_or_else(|| anyhow!("Upload format is incorrect. It should be Array."))?;
+    let ip_list_array = body_value
+        .as_array()
+        .ok_or_else(|| anyhow!("Upload format is incorrect. It should be Array."))?;
     let mut i: i64 = 0;
     let mut ip_lists: Vec<Vec<Ipv4Net>> = Vec::new();
     unsafe {
@@ -123,7 +143,7 @@ fn check_body(body: &str) -> Result<(i64, Vec<Vec<Ipv4Net>>), Error> {
         let ipv4net = net.unwrap();
         let first_octet: usize = ipv4net.addr().octets()[0].into();
         ip_lists[first_octet].push(ipv4net);
-        i+=1;
+        i += 1;
     }
     for ip_list_num in 0..ip_lists.len() {
         if ip_lists[ip_list_num].len() != 0 {
@@ -148,16 +168,16 @@ fn block_client_ip(client_ip: Ipv4Addr, ip_list: Vec<Ipv4Net>) -> bool {
         match &ip_list[mid] {
             _x if ip_list[mid].contains(&client_ip) => return true,
             _ => {
-                    let mid_network: u32 = ip_list[mid].network().into();
-                    let client_ip_u32: u32 = client_ip.into();
-                    if mid_network < client_ip_u32 {
-                        low = mid + 1;
-                        high = high;
-                    } else {
-                        low = low;
-                        high = mid - 1;
-                    }
-                },
+                let mid_network: u32 = ip_list[mid].network().into();
+                let client_ip_u32: u32 = client_ip.into();
+                if mid_network < client_ip_u32 {
+                    low = mid + 1;
+                    high = high;
+                } else {
+                    low = low;
+                    high = mid - 1;
+                }
+            }
         }
     }
 
