@@ -6,7 +6,7 @@
 e.g.
 
 ```
-curl -sv -X PUT https://partly-clear-bluebird.edgecompute.app/acl_upload -T src/ip_list.json
+curl -sv -X PUT https://ipacl.edgecompute.app/acl_upload -T src/ip_list.json
 ```
 
 ## IP ACL endpoint
@@ -15,7 +15,7 @@ curl -sv -X PUT https://partly-clear-bluebird.edgecompute.app/acl_upload -T src/
 e.g.
 
 ```
-curl -sv -X GET https://partly-clear-bluebird.edgecompute.app/acl_check -4
+curl -sv -X GET https://ipacl.edgecompute.app/acl_check -4
 ```
 
 ### Caveats
