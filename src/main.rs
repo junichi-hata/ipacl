@@ -4,6 +4,7 @@ use fastly::{object_store::ObjectStore, panic_with_status, Error, Request, Respo
 use ipnet::Ipv4Net;
 use serde_json::Value;
 use std::net::{IpAddr, Ipv4Addr};
+use num::ToPrimitive;
 
 #[fastly::main]
 fn main(mut req: Request) -> Result<Response, Error> {
@@ -116,15 +117,7 @@ fn get_ip_list(client_ip: &Ipv4Addr) -> Result<Vec<Ipv4Net>, Error> {
     } else {
         return Err(anyhow!("No ACL objects"));
     };
-    let mut i = 0;
-    for block_list in block_lists {
-        if i != first_octet {
-            i += 1;
-            continue;
-        }
-        return Ok(block_list);
-    }
-    return Err(anyhow!("No ACL objects"));
+    Ok(block_lists[ToPrimitive::to_usize(&first_octet).unwrap()].to_vec())
 }
 
 fn check_body(body: &str) -> Result<(usize, usize, Vec<Vec<Ipv4Net>>), Error> {
