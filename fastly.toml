@@ -6,4 +6,7 @@ description = "A basic starter kit that demonstrates routing, simple synthetic r
 language = "rust"
 manifest_version = 2
 name = "ipacl"
-service_id = ""
+service_id = "bg5RicgS4p0MYogg4vErh3"
+
+[scripts]
+  build = "cargo build --bin ipacl --release --target wasm32-wasi --color always"
