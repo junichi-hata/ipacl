@@ -2,9 +2,9 @@ use fastly::error::anyhow;
 use fastly::http::{header, Method, StatusCode};
 use fastly::{object_store::ObjectStore, panic_with_status, Error, Request, Response};
 use ipnet::Ipv4Net;
+use num::ToPrimitive;
 use serde_json::Value;
 use std::net::{IpAddr, Ipv4Addr};
-use num::ToPrimitive;
 
 #[fastly::main]
 fn main(mut req: Request) -> Result<Response, Error> {
@@ -73,23 +73,22 @@ fn main(mut req: Request) -> Result<Response, Error> {
             };
             let ip_list = get_ip_list(&client_ip_v4);
             if ip_list.is_err() {
-                return Ok(Response::from_status(StatusCode::OK)
-                    .with_body_text_plain(&client_ip.to_string()));
+                return Err(ip_list.unwrap_err());
             }
             if block_client_ip(client_ip_v4, ip_list.unwrap()) {
                 return Ok(Response::from_status(StatusCode::FORBIDDEN)
-                    .with_body_text_plain(&client_ip.to_string()));
+                    .with_header(
+                        "x-version",
+                        std::env::var("FASTLY_SERVICE_VERSION").unwrap(),
+                    )
+                    .with_body_text_plain(&format!("Blocked: {}", &client_ip.to_string())));
             }
-            /*
-            for block_ip_value in &ip_list {
-                let block_ip: Ipv4Net = block_ip_value.as_str().unwrap().parse::<Ipv4Net>()?;
-                if block_ip.contains(&client_ip_v4) {
-                    return Ok(Response::from_status(StatusCode::FORBIDDEN)
-                        .with_body_text_plain(&client_ip.to_string()));
-                }
-            }
-            */
-            Ok(Response::from_status(StatusCode::OK).with_body_text_plain(&client_ip.to_string()))
+            Ok(Response::from_status(StatusCode::OK)
+                .with_header(
+                    "x-version",
+                    std::env::var("FASTLY_SERVICE_VERSION").unwrap(),
+                )
+                .with_body_text_plain(&format!("Pass: {}", &client_ip.to_string())))
         }
 
         // Catch all other requests and return a 404.
@@ -136,7 +135,11 @@ fn check_body(body: &str) -> Result<(usize, usize, Vec<Vec<Ipv4Net>>), Error> {
         ip_lists.set_len(255);
     }
     for ipnet in ip_list_array {
-        let net = ipnet.as_str().unwrap().parse::<Ipv4Net>();
+        let mut ipnet_str = ipnet.as_str().unwrap().to_string();
+        if ipnet_str.find("/").is_none() {
+            ipnet_str.push_str("/32");
+        }
+        let net = ipnet_str.parse::<Ipv4Net>();
         if net.is_err() {
             return Err(anyhow!("{:?} doesn't match Ipv4Net format.", ipnet));
         }
