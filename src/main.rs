@@ -50,22 +50,6 @@ fn main(mut req: Request) -> Result<Response, Error> {
                         panic_with_status!(501, "objectstore ip-acl is not found");
                     });
                 let binary_ipnet_vec: Vec<u8> = bincode::serialize(&ip_lists[ip_list_idx])?;
-                /* 
-                let object = object_store.lookup_bytes(&ip_list_idx.to_string());
-                if object.is_err() {
-                    return Err(anyhow!(
-                        "Failed to read object store: {}, {}",
-                        ip_list_idx,
-                        object.unwrap_err()
-                    ));
-                }
-                let binary_ipnet_pre = object.unwrap();
-                if binary_ipnet_pre.is_some() {
-                    if binary_ipnet_vec == binary_ipnet_pre.unwrap() {
-                        continue;
-                    }
-                }
-                */
                 handle_vec.push(obs_insert(ip_list_idx, binary_ipnet_vec, object_store));
                 println!(
                     "Insert Start Time: {:?}, Index: {}",
@@ -237,6 +221,21 @@ async fn obs_insert(
     binary_ipnet_vec: Vec<u8>,
     mut object_store: ObjectStore,
 ) -> Result<(), ObjectStoreError> {
+    let object = object_store.lookup_bytes(&idx.to_string());
+    if object.is_err() {
+        return Err(object.unwrap_err());
+    }
+    let binary_ipnet_pre = object.unwrap();
+    if binary_ipnet_pre.is_some() {
+        if binary_ipnet_vec == binary_ipnet_pre.unwrap() {
+            println!(
+                "Matched End Time: {:?}, Index: {}",
+                OffsetDateTime::now_utc().format(LOG_TIMESTAMP_FORMAT),
+                idx
+            );
+            return Ok(());
+        }
+    }
     let result = object_store.insert(&idx.to_string(), binary_ipnet_vec);
     println!(
         "Insert End Time: {:?}, Index: {}",
