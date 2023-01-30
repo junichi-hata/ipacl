@@ -167,7 +167,11 @@ fn check_body(body: &str) -> Result<(usize, usize, Vec<Vec<Ipv4Net>>), Error> {
         ip_lists.set_len(255);
     }
     for ipnet in ip_list_array {
-        let net = ipnet.as_str().unwrap().parse::<Ipv4Net>();
+        let mut ipnet_str = ipnet.as_str().unwrap().to_string();
+        if ipnet_str.find("/").is_none() {
+            ipnet_str.push_str("/32");
+        }
+        let net = ipnet_str.parse::<Ipv4Net>();
         if net.is_err() {
             return Err(anyhow!("{:?} doesn't match Ipv4Net format.", ipnet));
         }
